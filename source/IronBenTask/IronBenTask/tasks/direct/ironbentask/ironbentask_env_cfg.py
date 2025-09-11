@@ -11,74 +11,6 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
-#my robot cfg
-import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg
-# 顶部再加一个导入
-
-
-IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/IRONBEN_0914.usd"
-rough_plane_usd_path = f"/home/bird/isaacSim/Learn/IronBenTask/rough_plane.usd"
-
-IronbenFourLegCfg = ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(
-        usd_path=IronBen_USD_PATH,
-        activate_contact_sensors=True,
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            rigid_body_enabled=True,
-            max_linear_velocity=1.0,
-            max_angular_velocity=1.0,
-            max_depenetration_velocity=0.5,
-            enable_gyroscopic_forces=True,
-            disable_gravity=False,          # 需要重力
-        ),
-        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
-            solver_position_iteration_count=4,
-            solver_velocity_iteration_count=0,
-            sleep_threshold=0.005,
-            stabilization_threshold=0.001,
-        ),
-    ),
-    init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.2),          # 根据地高度微调
-        # rot=(0.9238795, 0.0, 0.0, 0.3826834),#以四元数方式表示，绕z轴45度
-        joint_pos={
-            # 腿关节初始全部置 0（可再调）
-            "LF_L_JOINT": 0.0, "LF_K_JOINT": 0.0, "LF_W_JOINT": 0.0,
-            "RF_L_JOINT": 0.0, "RF_K_JOINT": 0.0, "RF_W_JOINT": 0.0,
-            "LH_L_JOINT": 0.0, "LH_K_JOINT": 0.0, "LH_W_JOINT": 0.0,
-            "RH_L_JOINT": 0.0, "RH_K_JOINT": 0.0, "RH_W_JOINT": 0.0,
-        },
-    ),
-    actuators={
-        "hip": ImplicitActuatorCfg(
-            joint_names_expr=[".*_L_JOINT"],
-            effort_limit=3.0,          # PD 最大纠偏力矩
-            velocity_limit=1.0,       # 速度限幅（足够大即可）
-            stiffness=80.0,             # P 增益
-            damping=5.0,                # D 增益
-            friction=0.0,
-        ),
-        "knee": ImplicitActuatorCfg(
-            joint_names_expr=[".*_K_JOINT"],
-            effort_limit=3.0,
-            velocity_limit=1.0,
-            stiffness=80.0,
-            damping=5.0,
-            friction=0.0,
-        ),
-        #把“轮”从 被动 → 主动
-        "wheel": ImplicitActuatorCfg(
-            joint_names_expr=[".*_W_JOINT"],
-            effort_limit_sim=20.0,      # 给点力矩，让它能转起来
-            velocity_limit=10.0,        # 允许转速 > 5 rad/s
-            stiffness=0.0,              # 位置环关掉
-            damping=2.0,                # 一点速度阻尼，防止抖动
-        ),
-    },
-)
 
 @configclass
 class IronbentaskEnvCfg(DirectRLEnvCfg):
@@ -98,7 +30,7 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
             kinematic_enabled=True,      # 地面不动
-            disable_gravity=True,
+            disable_gravity=True,   
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(
             collision_enabled=True,
