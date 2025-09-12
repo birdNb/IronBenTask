@@ -41,6 +41,11 @@ class IronbentaskEnv(DirectRLEnv):
             self.scene.filter_collisions(global_prim_paths=[])
         # add articulation to scene
         self.scene.articulations["robot"] = self.robot
+
+        # ✅ 强制同步一次，消掉首次 device=-1 警告
+        # self.scene.write_data_to_sim()
+        # self.robot.update(self.dt)
+
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
@@ -85,8 +90,9 @@ class IronbentaskEnv(DirectRLEnv):
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._cart_dof_idx]) > self.cfg.max_cart_pos, dim=1)
-        out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) > math.pi / 2, dim=1)
+        out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) < 0, dim=1)
         return out_of_bounds, time_out
+        # return time_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:

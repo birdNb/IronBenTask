@@ -11,33 +11,99 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
+#my robot cfg
+import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.assets import ArticulationCfg
 IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/ironben0912.usd"
+
+IronbenFourLegCfg = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=IronBen_USD_PATH,
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            rigid_body_enabled=True,
+            max_linear_velocity=1.0,
+            max_angular_velocity=1.0,
+            max_depenetration_velocity=0.5,
+            enable_gyroscopic_forces=True,
+            disable_gravity=False,          # 需要重力
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=4,
+            solver_velocity_iteration_count=0,
+            sleep_threshold=0.005,
+            stabilization_threshold=0.001,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.15),          # 根据地高度微调
+        joint_pos={
+            # 腿关节初始全部置 0（可再调）
+            "LF_L_JOINT": 0.0, "LF_K_JOINT": 0.0, "LF_W_JOINT": 0.0,
+            "RF_L_JOINT": 0.0, "RF_K_JOINT": 0.0, "RF_W_JOINT": 0.0,
+            "LH_L_JOINT": 0.0, "LH_K_JOINT": 0.0, "LH_W_JOINT": 0.0,
+            "RH_L_JOINT": 0.0, "RH_K_JOINT": 0.0, "RH_W_JOINT": 0.0,
+        },
+    ),
+    actuators={
+        # 1. 大腿摆动（L_Link）→ 可控
+        "hip": ImplicitActuatorCfg(
+            joint_names_expr=[".*_L_JOINT"],      # 四条大腿
+            effort_limit_sim=80.0,
+            stiffness=50.0,
+            damping=2.0,
+        ),
+        # 2. 小腿摆动（K_Link）→ 可控
+        "knee": ImplicitActuatorCfg(
+            joint_names_expr=[".*_K_JOINT"],
+            effort_limit_sim=80.0,
+            stiffness=50.0,
+            damping=2.0,
+        ),
+        # 3. 轮关节（W_JOINT）→ 被动，不转
+        "wheel": ImplicitActuatorCfg(
+            joint_names_expr=[".*_W_JOINT"],
+            effort_limit_sim=0.0,   # 不施加力
+            stiffness=0.0,          # 自由摆动
+            damping=0.0,
+        ),
+    },
+)
 
 @configclass
 class IronbentaskEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 2
-    episode_length_s = 5.0
+    episode_length_s = 20.0
     # - spaces definition
+    #8关节 16个观测量
+    # action_space = 8
+    #先测试一下能不能跑
     action_space = 1
-    observation_space = 4
+
+    # observation_space = 16
+    observation_space = 2
     state_space = 0
 
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # robot(s)
-    robot_cfg: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot_cfg: ArticulationCfg = IronbenFourLegCfg.replace(prim_path="/World/envs/env_.*/Robot")
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
 
     # custom parameters/scales
     # - controllable joint
-    cart_dof_name = "slider_to_cart"
-    pole_dof_name = "cart_to_pole"
+    #先只动一条腿
+    cart_dof_name = "LF_L_JOINT"
+    pole_dof_name = "LF_K_JOINT"
+    
     # - action scale
-    action_scale = 100.0  # [N]
+    action_scale = 10.0  # [N]
     # - reward scales
     rew_scale_alive = 1.0
     rew_scale_terminated = -2.0
