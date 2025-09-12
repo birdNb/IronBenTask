@@ -15,7 +15,11 @@ from isaaclab.utils import configclass
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
+# 顶部再加一个导入
+
+
 IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/ironben0912.usd"
+rough_plane_usd_path = f"/home/bird/isaacSim/Learn/IronBenTask/rough_plane.usd"
 
 IronbenFourLegCfg = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -83,6 +87,24 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     #先测试一下能不能跑
     action_space = 1
 
+    # 加入粗糙地形
+    rough_ground_cfg = sim_utils.UsdFileCfg(
+        usd_path=rough_plane_usd_path,
+        scale=(1.0, 1.0, 1.0),
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            rigid_body_enabled=True,
+            kinematic_enabled=True,      # 地面不动
+            disable_gravity=True,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            collision_enabled=True,
+            contact_offset=0.02,
+            rest_offset=0.0,
+        ),
+        semantic_tags=[("class", "ground")],
+    )
+
+
     # observation_space = 16
     observation_space = 2
     state_space = 0
@@ -93,8 +115,8 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     # robot(s)
     robot_cfg: ArticulationCfg = IronbenFourLegCfg.replace(prim_path="/World/envs/env_.*/Robot")
 
-    # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
+    # scene  env_spacing 机器人间距
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.0, replicate_physics=True)
 
     # custom parameters/scales
     # - controllable joint

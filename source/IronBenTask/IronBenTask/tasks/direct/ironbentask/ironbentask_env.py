@@ -16,13 +16,21 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils.math import sample_uniform
 
 from .ironbentask_env_cfg import IronbentaskEnvCfg
-
+from isaaclab.sim.spawners.from_files import spawn_from_usd   #引入崎岖地面
+from torch.utils.tensorboard import SummaryWriter   # tensorBoard输出
+import pathlib, datetime
 
 class IronbentaskEnv(DirectRLEnv):
     cfg: IronbentaskEnvCfg
 
     def __init__(self, cfg: IronbentaskEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+
+        #日志目录用时间戳
+        log_dir = pathlib.Path("logs/imu") 
+        # / datetime.datetime.now().strftime("%m%d_%H%M%S")
+        self.writer = SummaryWriter(log_dir)
+        self.log_step = 0          # 全局步数
 
         self._cart_dof_idx, _ = self.robot.find_joints(self.cfg.cart_dof_name)
         self._pole_dof_idx, _ = self.robot.find_joints(self.cfg.pole_dof_name)
@@ -31,9 +39,12 @@ class IronbentaskEnv(DirectRLEnv):
         self.joint_vel = self.robot.data.joint_vel
 
     def _setup_scene(self):
+        # 1. 先 Spawn 粗糙地面（位置③）
+        spawn_from_usd(prim_path="/World/rough_ground", cfg=self.cfg.rough_ground_cfg)
+        # 2. 再 Spawn 机器人（位置①）
         self.robot = Articulation(self.cfg.robot_cfg)
-        # add ground plane
-        spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+        # add ground plane 注释掉原有地形
+        # spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
         # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
         # we need to explicitly filter collisions for CPU simulation
@@ -67,6 +78,15 @@ class IronbentaskEnv(DirectRLEnv):
             dim=-1,
         )
         observations = {"policy": obs}
+        #读取IMU数据
+        roll  = 1
+        pitch = 1
+
+        #
+        if self.log_step % 64 == 0:
+            self.writer.add_scalar("imu/roll",  roll,  self.log_step)
+            self.writer.add_scalar("imu/pitch", pitch, self.log_step)
+        self.log_step += 1
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
