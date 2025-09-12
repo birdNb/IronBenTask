@@ -11,6 +11,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
+IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/ironben0912.usd"
 
 @configclass
 class IronbentaskEnvCfg(DirectRLEnvCfg):
