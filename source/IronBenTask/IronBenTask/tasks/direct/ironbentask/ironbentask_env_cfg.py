@@ -18,7 +18,7 @@ from isaaclab.assets import ArticulationCfg
 # 顶部再加一个导入
 
 
-IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/ironben0912.usd"
+IronBen_USD_PATH = f"/home/bird/isaacSim/Learn/IronBenTask/IRONBEN_0914.usd"
 rough_plane_usd_path = f"/home/bird/isaacSim/Learn/IronBenTask/rough_plane.usd"
 
 IronbenFourLegCfg = ArticulationCfg(
@@ -42,7 +42,7 @@ IronbenFourLegCfg = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.15),          # 根据地高度微调
+        pos=(0.0, 0.0, 0.2),          # 根据地高度微调
         joint_pos={
             # 腿关节初始全部置 0（可再调）
             "LF_L_JOINT": 0.0, "LF_K_JOINT": 0.0, "LF_W_JOINT": 0.0,
@@ -106,7 +106,9 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
 
 
     # observation_space = 16
-    observation_space = 2
+    # observation_space = 2 #原来的只有单关节的角度和速度
+    #加了 roll 和 pitch
+    observation_space = 6  # 4 original + roll + pitch
     state_space = 0
 
     # simulation
