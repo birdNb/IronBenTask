@@ -37,7 +37,30 @@ class IronbentaskEnv(DirectRLEnv):
 
         self.joint_pos = self.robot.data.joint_pos
         self.joint_vel = self.robot.data.joint_vel
+    @staticmethod
+    #在类中添加如下静态方法
+    def _quat_to_euler(quat):
+        # 将四元数 (w, x, y, z) 转换为 roll, pitch, yaw（单位：弧度）
 
+        w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+
+        # Roll (x-axis rotation)
+        sinr_cosp = 2 * (w * x + y * z)
+        cosr_cosp = 1 - 2 * (x * x + y * y)
+        roll = torch.atan2(sinr_cosp, cosr_cosp)
+
+        # Pitch (y-axis rotation)
+        sinp = 2 * (w * y - z * x)
+        pitch = torch.where(torch.abs(sinp) >= 1,
+                            torch.sign(sinp) * torch.pi / 2,
+                            torch.asin(sinp))
+
+        # Yaw (z-axis rotation)
+        siny_cosp = 2 * (w * z + x * y)
+        cosy_cosp = 1 - 2 * (y * y + z * z)
+        yaw = torch.atan2(siny_cosp, cosy_cosp)
+        return roll, pitch, yaw
+    
     def _setup_scene(self):
         # 1. 先 Spawn 粗糙地面（位置③）
         spawn_from_usd(prim_path="/World/rough_ground", cfg=self.cfg.rough_ground_cfg)
@@ -48,14 +71,11 @@ class IronbentaskEnv(DirectRLEnv):
         # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
         # we need to explicitly filter collisions for CPU simulation
+        
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
         # add articulation to scene
         self.scene.articulations["robot"] = self.robot
-
-        # ✅ 强制同步一次，消掉首次 device=-1 警告
-        # self.scene.write_data_to_sim()
-        # self.robot.update(self.dt)
 
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -68,24 +88,32 @@ class IronbentaskEnv(DirectRLEnv):
         self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._cart_dof_idx)
 
     def _get_observations(self) -> dict:
+        # 获取 base_link 的姿态（四元数）
+        base_quat = self.robot.data.root_quat_w  # shape: (num_envs, 4)
+
+        # 将四元数转换为欧拉角（roll, pitch, yaw）
+        roll, pitch, yaw = self._quat_to_euler(base_quat)
+
+        # 弧度 → 角度
+        roll_deg = roll * 180.0 / torch.pi
+        pitch_deg = pitch * 180.0 / torch.pi
         obs = torch.cat(
             (
                 self.joint_pos[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
                 self.joint_vel[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
                 self.joint_pos[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
                 self.joint_vel[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
+                roll.unsqueeze(dim=1),
+                pitch.unsqueeze(dim=1),
             ),
             dim=-1,
         )
         observations = {"policy": obs}
-        #读取IMU数据
-        roll  = 1
-        pitch = 1
 
-        #
-        if self.log_step % 64 == 0:
-            self.writer.add_scalar("imu/roll",  roll,  self.log_step)
-            self.writer.add_scalar("imu/pitch", pitch, self.log_step)
+        # TensorBoard 日志
+        if self.log_step % 16 == 0:
+            self.writer.add_scalar("imu/roll_deg", roll_deg.mean().item(), self.log_step)
+            self.writer.add_scalar("imu/pitch_deg", pitch_deg.mean().item(), self.log_step)
         self.log_step += 1
         return observations
 
