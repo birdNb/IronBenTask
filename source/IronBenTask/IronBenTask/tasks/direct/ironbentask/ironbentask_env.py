@@ -130,6 +130,7 @@ class IronbentaskEnv(DirectRLEnv):
             self.writer.add_scalar("imu/roll_deg", roll_deg.mean().item(), self.log_step)
             self.writer.add_scalar("imu/pitch_deg", pitch_deg.mean().item(), self.log_step)
             self.writer.add_scalar("imu/lin_vel_x", lin_vel[:, 0].mean().item(), self.log_step)
+            
         self.log_step += 1
 
         return {"policy": observations}           # ← 包成字典
@@ -152,6 +153,8 @@ class IronbentaskEnv(DirectRLEnv):
         rew_forward = forward_vel * 2.0
         total_reward = self.cfg.rew_scale_alive * 1.0 + rew_forward + rew_pos + rew_vel
 
+        self.writer.add_scalar("total_reward", total_reward.mean().item(), self.log_step)
+        self.writer.add_scalar("reward/forward", rew_forward.mean().item(), self.log_step)
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:

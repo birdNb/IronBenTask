@@ -69,9 +69,9 @@ IronbenFourLegCfg = ArticulationCfg(
         # 3. 轮关节（W_JOINT）→ 被动，不转
         "wheel": ImplicitActuatorCfg(
             joint_names_expr=[".*_W_JOINT"],
-            effort_limit_sim=0.0,   # 不施加力
-            stiffness=0.0,          # 自由摆动
-            damping=0.0,
+            effort_limit_sim=0.0,      # 不施加驱动力
+            stiffness=1e6,               # 足够大 → 相当于刚性
+            damping=1e4,                 # 也足够大
         ),
     },
 )
