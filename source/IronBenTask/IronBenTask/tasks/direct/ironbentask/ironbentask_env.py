@@ -136,25 +136,45 @@ class IronbentaskEnv(DirectRLEnv):
         return {"policy": observations}           # ← 包成字典
 
     def _get_rewards(self) -> torch.Tensor:
+        # 8 个可控关节状态
         ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
         ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
 
-        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1)
-        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1)
+        # 1. 前进速度奖励（x 轴）
+        forward_vel = self.robot.data.root_lin_vel_w[:, 0]          # (num_envs,)
+        rew_forward = forward_vel * 2.0                             # 可调系数
 
-        # 前向速度（base_link 在 x 轴方向的速度）
-        forward_vel = self.robot.data.root_lin_vel_w[:, 0]  # shape: (num_envs,)
-        # 可选：惩罚过大的关节速度和偏离零位
-        ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
-        ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
+        # 2. 低前进速度惩罚（< 0.2 m/s 时线性惩罚）
+        low_speed_penalty = torch.clamp(0.2 - forward_vel, min=0.0) * 1.5
+
+        # 3. 腿部低速度惩罚（鼓励腿部摆动）
+        leg_speed_l2 = torch.norm(ctrl_vel, dim=1)                  # 8 关节速度 L2
+        low_leg_speed_penalty = torch.clamp(0.5 - leg_speed_l2, min=0.0) * 0.8
+
+        # 4. 小惩罚：关节偏离零位 & 速度过大
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
         rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
-        # 主奖励：前向速度
-        rew_forward = forward_vel * 2.0
-        total_reward = self.cfg.rew_scale_alive * 1.0 + rew_forward + rew_pos + rew_vel
 
-        self.writer.add_scalar("total_reward", total_reward.mean().item(), self.log_step)
-        self.writer.add_scalar("reward/forward", rew_forward.mean().item(), self.log_step)
+        # 5. 存活奖励
+        rew_alive = self.cfg.rew_scale_alive * 1.0
+
+        # 总奖励
+        total_reward = (
+            rew_alive
+            + rew_forward
+            - low_speed_penalty          # 注意是减
+            - low_leg_speed_penalty      # 注意是减
+            + rew_pos
+            + rew_vel
+        )
+
+        # TensorBoard 日志
+        if self.log_step % 16 == 0:
+            self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
+            self.writer.add_scalar("reward/low_speed",    low_speed_penalty.mean().item(),  self.log_step)
+            self.writer.add_scalar("reward/low_leg",      low_leg_speed_penalty.mean().item(), self.log_step)
+            self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
+
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
