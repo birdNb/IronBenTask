@@ -20,6 +20,7 @@ from isaaclab.sim.spawners.from_files import spawn_from_usd   #引入崎岖地�
 from torch.utils.tensorboard import SummaryWriter   # tensorBoard输出
 import pathlib, datetime
 
+
 class IronbentaskEnv(DirectRLEnv):
     cfg: IronbentaskEnvCfg
 
@@ -32,11 +33,18 @@ class IronbentaskEnv(DirectRLEnv):
         self.writer = SummaryWriter(log_dir)
         self.log_step = 0          # 全局步数
 
-        self._cart_dof_idx, _ = self.robot.find_joints(self.cfg.cart_dof_name)
-        self._pole_dof_idx, _ = self.robot.find_joints(self.cfg.pole_dof_name)
+        # 获取所有可控关节索引（L 和 K）
+        l_idx, _ = self.robot.find_joints([".*_L_JOINT"])
+        k_idx, _ = self.robot.find_joints([".*_K_JOINT"])
 
+        self._leg_l_dof_idx = torch.tensor(l_idx, dtype=torch.long, device=self.device)
+        self._leg_k_dof_idx = torch.tensor(k_idx, dtype=torch.long, device=self.device)
+        self._all_ctrl_dof_idx = torch.cat((self._leg_l_dof_idx, self._leg_k_dof_idx), dim=0)
+
+        # 在 __init__ 末尾加回来
         self.joint_pos = self.robot.data.joint_pos
         self.joint_vel = self.robot.data.joint_vel
+
     @staticmethod
     #在类中添加如下静态方法
     def _quat_to_euler(quat):
@@ -85,7 +93,9 @@ class IronbentaskEnv(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
-        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._cart_dof_idx)
+        # self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._all_ctrl_dof_idx)
+
+        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._all_ctrl_dof_idx)
 
     def _get_observations(self) -> dict:
         # 获取 base_link 的姿态（四元数）
@@ -97,39 +107,51 @@ class IronbentaskEnv(DirectRLEnv):
         # 弧度 → 角度
         roll_deg = roll * 180.0 / torch.pi
         pitch_deg = pitch * 180.0 / torch.pi
-        obs = torch.cat(
-            (
-                self.joint_pos[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_vel[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_pos[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_vel[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
-                roll.unsqueeze(dim=1),
-                pitch.unsqueeze(dim=1),
-            ),
-            dim=-1,
-        )
-        observations = {"policy": obs}
+
+        # 8 个可控关节
+        ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
+        ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
+
+        # 获取 base 线速度与角速度
+        lin_vel = self.robot.data.root_lin_vel_w  # (num_envs, 3)
+        ang_vel = self.robot.data.root_ang_vel_w  # (num_envs, 3)
+
+        observations = torch.cat([
+            ctrl_pos,                    # 8
+            ctrl_vel,                    # 8
+            lin_vel[:, :2],              # x, y 速度（2）
+            ang_vel[:, 2:3],             # yaw rate（1）
+            roll.unsqueeze(-1),
+            pitch.unsqueeze(-1),
+        ], dim=-1)  # 总共 8+8+2+1+2 = 21
 
         # TensorBoard 日志
         if self.log_step % 16 == 0:
             self.writer.add_scalar("imu/roll_deg", roll_deg.mean().item(), self.log_step)
             self.writer.add_scalar("imu/pitch_deg", pitch_deg.mean().item(), self.log_step)
+            self.writer.add_scalar("imu/lin_vel_x", lin_vel[:, 0].mean().item(), self.log_step)
         self.log_step += 1
-        return observations
+
+        return {"policy": observations}           # ← 包成字典
 
     def _get_rewards(self) -> torch.Tensor:
-        total_reward = compute_rewards(
-            self.cfg.rew_scale_alive,
-            self.cfg.rew_scale_terminated,
-            self.cfg.rew_scale_pole_pos,
-            self.cfg.rew_scale_cart_vel,
-            self.cfg.rew_scale_pole_vel,
-            self.joint_pos[:, self._pole_dof_idx[0]],
-            self.joint_vel[:, self._pole_dof_idx[0]],
-            self.joint_pos[:, self._cart_dof_idx[0]],
-            self.joint_vel[:, self._cart_dof_idx[0]],
-            self.reset_terminated,
-        )
+        ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
+        ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
+
+        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1)
+        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1)
+
+        # 前向速度（base_link 在 x 轴方向的速度）
+        forward_vel = self.robot.data.root_lin_vel_w[:, 0]  # shape: (num_envs,)
+        # 可选：惩罚过大的关节速度和偏离零位
+        ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
+        ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
+        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
+        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
+        # 主奖励：前向速度
+        rew_forward = forward_vel * 2.0
+        total_reward = self.cfg.rew_scale_alive * 1.0 + rew_forward + rew_pos + rew_vel
+
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -137,8 +159,8 @@ class IronbentaskEnv(DirectRLEnv):
         self.joint_vel = self.robot.data.joint_vel
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._cart_dof_idx]) > self.cfg.max_cart_pos, dim=1)
-        out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) < 0, dim=1)
+        # 举例：任意关节角度超过 ±1.57 rad 就重置
+        out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._all_ctrl_dof_idx]) > 1.57, dim=1)
         return out_of_bounds, time_out
         # return time_out
 
@@ -147,43 +169,16 @@ class IronbentaskEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        joint_pos = self.robot.data.default_joint_pos[env_ids]
-        joint_pos[:, self._pole_dof_idx] += sample_uniform(
-            self.cfg.initial_pole_angle_range[0] * math.pi,
-            self.cfg.initial_pole_angle_range[1] * math.pi,
-            joint_pos[:, self._pole_dof_idx].shape,
-            joint_pos.device,
-        )
-        joint_vel = self.robot.data.default_joint_vel[env_ids]
+        joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
+        joint_vel = self.robot.data.default_joint_vel[env_ids].clone()
+
+        # 给 8 个可控关节加一点随机初始偏差
+        noise = sample_uniform(-0.1, 0.1, joint_pos[:, self._all_ctrl_dof_idx].shape, joint_pos.device)
+        joint_pos[:, self._all_ctrl_dof_idx] += noise
 
         default_root_state = self.robot.data.default_root_state[env_ids]
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
-        self.joint_pos[env_ids] = joint_pos
-        self.joint_vel[env_ids] = joint_vel
-
         self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
-
-
-@torch.jit.script
-def compute_rewards(
-    rew_scale_alive: float,
-    rew_scale_terminated: float,
-    rew_scale_pole_pos: float,
-    rew_scale_cart_vel: float,
-    rew_scale_pole_vel: float,
-    pole_pos: torch.Tensor,
-    pole_vel: torch.Tensor,
-    cart_pos: torch.Tensor,
-    cart_vel: torch.Tensor,
-    reset_terminated: torch.Tensor,
-):
-    rew_alive = rew_scale_alive * (1.0 - reset_terminated.float())
-    rew_termination = rew_scale_terminated * reset_terminated.float()
-    rew_pole_pos = rew_scale_pole_pos * torch.sum(torch.square(pole_pos).unsqueeze(dim=1), dim=-1)
-    rew_cart_vel = rew_scale_cart_vel * torch.sum(torch.abs(cart_vel).unsqueeze(dim=1), dim=-1)
-    rew_pole_vel = rew_scale_pole_vel * torch.sum(torch.abs(pole_vel).unsqueeze(dim=1), dim=-1)
-    total_reward = rew_alive + rew_termination + rew_pole_pos + rew_cart_vel + rew_pole_vel
-    return total_reward
