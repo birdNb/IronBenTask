@@ -52,19 +52,21 @@ IronbenFourLegCfg = ArticulationCfg(
         },
     ),
     actuators={
-        # 1. 大腿摆动（L_Link）→ 可控
         "hip": ImplicitActuatorCfg(
-            joint_names_expr=[".*_L_JOINT"],      # 四条大腿
-            effort_limit_sim=3.0,
-            stiffness=11.0,
-            damping=2.0,
+            joint_names_expr=[".*_L_JOINT"],
+            effort_limit=3.0,          # PD 最大纠偏力矩
+            velocity_limit=1.0,       # 速度限幅（足够大即可）
+            stiffness=80.0,             # P 增益
+            damping=5.0,                # D 增益
+            friction=0.0,
         ),
-        # 2. 小腿摆动（K_Link）→ 可控
         "knee": ImplicitActuatorCfg(
             joint_names_expr=[".*_K_JOINT"],
-            effort_limit_sim=3.0,
-            stiffness=11.0,
-            damping=2.0,
+            effort_limit=3.0,
+            velocity_limit=1.0,
+            stiffness=80.0,
+            damping=5.0,
+            friction=0.0,
         ),
         # 3. 轮关节（W_JOINT）→ 被动，不转
         "wheel": ImplicitActuatorCfg(
@@ -127,7 +129,7 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     # pole_dof_name = "LF_K_JOINT"
     
     # - action scale
-    action_scale = 3.0  # [N]
+    action_scale = 1.0  # [N]
     # - reward scales
     rew_scale_alive = 1.0
     rew_scale_terminated = -2.0

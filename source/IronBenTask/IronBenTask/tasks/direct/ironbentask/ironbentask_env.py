@@ -93,9 +93,15 @@ class IronbentaskEnv(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
-        # self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._all_ctrl_dof_idx)
+        # actions 维度 (num_envs, 8) 范围 [-1, 1]
+        # 先缩放到关节限位（±0.7 rad 为例，可调）
+        joint_limit = 0.7
+        target_pos = self.actions * joint_limit          # -> [-0.7, 0.7]
 
-        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._all_ctrl_dof_idx)
+        # 写入 PD 目标位置
+        self.robot.set_joint_position_target(
+            target_pos, joint_ids=self._all_ctrl_dof_idx
+        )
 
     def _get_observations(self) -> dict:
         # 获取 base_link 的姿态（四元数）
