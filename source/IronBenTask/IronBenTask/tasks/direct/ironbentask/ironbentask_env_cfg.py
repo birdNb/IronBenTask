@@ -43,6 +43,7 @@ IronbenFourLegCfg = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.2),          # 根据地高度微调
+        rot=(0.9238795, 0.0, 0.0, 0.3826834),#以四元数方式表示，绕z轴45度
         joint_pos={
             # 腿关节初始全部置 0（可再调）
             "LF_L_JOINT": 0.0, "LF_K_JOINT": 0.0, "LF_W_JOINT": 0.0,

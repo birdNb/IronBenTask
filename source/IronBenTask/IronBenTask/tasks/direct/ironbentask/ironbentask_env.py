@@ -49,9 +49,7 @@ class IronbentaskEnv(DirectRLEnv):
     #在类中添加如下静态方法
     def _quat_to_euler(quat):
         # 将四元数 (w, x, y, z) 转换为 roll, pitch, yaw（单位：弧度）
-
         w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-
         # Roll (x-axis rotation)
         sinr_cosp = 2 * (w * x + y * z)
         cosr_cosp = 1 - 2 * (x * x + y * y)
@@ -148,21 +146,21 @@ class IronbentaskEnv(DirectRLEnv):
 
         # 1. 前进速度奖励（x 轴）
         forward_vel = self.robot.data.root_lin_vel_w[:, 0]
-        rew_forward = forward_vel * 2.0
+        rew_forward = forward_vel * 2.5
 
         # 2. 侧向速度惩罚（y 轴）
         lateral_vel = self.robot.data.root_lin_vel_w[:, 1]
-        lat_penalty = torch.abs(lateral_vel) * 0.5
+        lat_penalty = torch.abs(lateral_vel) * 0.1
 
-        # 3. 偏航角速度惩罚（z 轴角速度）
-        yaw_rate = self.robot.data.root_ang_vel_w[:, 2]
-        yaw_penalty = torch.abs(yaw_rate) * 0.3
+        # # 3. 偏航角速度惩罚（z 轴角速度）
+        # yaw_rate = self.robot.data.root_ang_vel_w[:, 2]
+        # yaw_penalty = torch.abs(yaw_rate) * 0.3
 
-        # 4. roll / pitch 角度惩罚（身体倾斜）
+        # 4. roll / pitch 角度惩罚（身体倾斜） 降低惩罚1->0.5
         base_quat = self.robot.data.root_quat_w
         roll, pitch, _ = self._quat_to_euler(base_quat)
-        roll_penalty = torch.abs(roll) * 1.0
-        pitch_penalty = torch.abs(pitch) * 1.0
+        roll_penalty = torch.abs(roll) * 0.5
+        pitch_penalty = torch.abs(pitch) * 0.5
 
         # 5. 关节偏离零位 & 速度过大（小惩罚）
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
@@ -176,7 +174,7 @@ class IronbentaskEnv(DirectRLEnv):
             rew_alive
             + rew_forward
             - lat_penalty
-            - yaw_penalty
+            # - yaw_penalty
             - roll_penalty
             - pitch_penalty
             + rew_pos
@@ -184,11 +182,10 @@ class IronbentaskEnv(DirectRLEnv):
         )
 
         # TensorBoard 日志（每 16 帧一次）
-        if self.log_step % 16 == 0:
+        if self.log_step % 64 == 0:
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
             self.writer.add_scalar("penalty/lateral",     lat_penalty.mean().item(),        self.log_step)
-            self.writer.add_scalar("penalty/yaw_rate",    yaw_penalty.mean().item(),        self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
