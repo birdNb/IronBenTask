@@ -147,6 +147,8 @@ class IronbentaskEnv(DirectRLEnv):
         # 1. 前进速度奖励（x 轴）
         forward_vel = self.robot.data.root_lin_vel_w[:, 0]
         rew_forward = forward_vel * 2.5
+        if forward_vel.mean() < 0.1:   # 速度目标
+            rew_forward -= 0.5
 
         # 2. 侧向速度惩罚（y 轴）
         lateral_vel = self.robot.data.root_lin_vel_w[:, 1]
@@ -159,8 +161,8 @@ class IronbentaskEnv(DirectRLEnv):
         # 4. roll / pitch 角度惩罚（身体倾斜） 降低惩罚1->0.5
         base_quat = self.robot.data.root_quat_w
         roll, pitch, _ = self._quat_to_euler(base_quat)
-        roll_penalty = torch.abs(roll) * 0.5
-        pitch_penalty = torch.abs(pitch) * 0.5
+        roll_penalty = torch.abs(roll) * 0.05
+        pitch_penalty = torch.abs(pitch) * 0.05
 
         # 5. 关节偏离零位 & 速度过大（小惩罚）
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01

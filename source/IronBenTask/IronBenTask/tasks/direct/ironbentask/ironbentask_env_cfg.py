@@ -83,7 +83,7 @@ IronbenFourLegCfg = ArticulationCfg(
 class IronbentaskEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 2
-    episode_length_s = 20.0
+    episode_length_s = 10.0
     # - spaces definition
     #8关节 16个观测量
     action_space = 8
@@ -111,7 +111,7 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     # observation_space = 16
     # observation_space = 2 #原来的只有单关节的角度和速度
     #加了 roll 和 pitch
-    observation_space = 21  # 4 original + roll + pitch
+    observation_space = 22  # 4 original + roll + pitch
     state_space = 0
 
     # simulation
