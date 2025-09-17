@@ -45,6 +45,9 @@ class IronbentaskEnv(DirectRLEnv):
         self.joint_pos = self.robot.data.joint_pos
         self.joint_vel = self.robot.data.joint_vel
 
+        # 记录上一帧 base 位置（用于计算实际位移）
+        self._last_x = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+
     @staticmethod
     #在类中添加如下静态方法
     def _quat_to_euler(quat):
@@ -144,15 +147,16 @@ class IronbentaskEnv(DirectRLEnv):
         ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
         ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
 
-        # 1. 前进速度奖励（x 轴）
+        # # 1. 前进速度奖励（x 轴）
         forward_vel = self.robot.data.root_lin_vel_w[:, 0]
-        rew_forward = forward_vel * 2.5
-        if forward_vel.mean() < 0.1:   # 速度目标
-            rew_forward -= 0.5
+        # rew_forward = forward_vel * 2.5
 
-        # 2. 侧向速度惩罚（y 轴）
-        lateral_vel = self.robot.data.root_lin_vel_w[:, 1]
-        lat_penalty = torch.abs(lateral_vel) * 0.1
+        # ★ X 轴静止惩罚：速度 < 0.1 m/s 时扣分
+        still_penalty = torch.clamp(0.1 - forward_vel, min=0.0) * -2.5   # 可调系数
+
+        # # 2. 侧向速度惩罚（y 轴）
+        # lateral_vel = self.robot.data.root_lin_vel_w[:, 1]
+        # lat_penalty = torch.abs(lateral_vel) * 0.1
 
         # # 3. 偏航角速度惩罚（z 轴角速度）
         # yaw_rate = self.robot.data.root_ang_vel_w[:, 2]
@@ -168,26 +172,35 @@ class IronbentaskEnv(DirectRLEnv):
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
         rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
 
+        # 1. 实际向前位移奖励（Δx）
+        current_x = self.robot.data.root_pos_w[:, 0]
+        dx = current_x - self._last_x
+        self._last_x = current_x
+        rew_forward = dx * 100.0   # 每米 100 分，可调
+
         # 6. 存活奖励
-        rew_alive = self.cfg.rew_scale_alive * 1.0
+        # rew_alive = self.cfg.rew_scale_alive * 1.0
 
         # 总奖励
         total_reward = (
-            rew_alive
-            + rew_forward
-            - lat_penalty
+            # rew_alive
+            rew_forward
+            # - lat_penalty
             # - yaw_penalty
             - roll_penalty
             - pitch_penalty
             + rew_pos
             + rew_vel
+            + still_penalty
         )
 
         # TensorBoard 日志（每 16 帧一次）
         if self.log_step % 64 == 0:
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
-            self.writer.add_scalar("penalty/lateral",     lat_penalty.mean().item(),        self.log_step)
+            self.writer.add_scalar("reward/dx", dx.mean().item(), self.log_step)
+            self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
+            # self.writer.add_scalar("penalty/lateral",     lat_penalty.mean().item(),        self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
@@ -219,3 +232,5 @@ class IronbentaskEnv(DirectRLEnv):
         self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
+
+        self._last_x[env_ids] = self.robot.data.root_pos_w[env_ids, 0]
