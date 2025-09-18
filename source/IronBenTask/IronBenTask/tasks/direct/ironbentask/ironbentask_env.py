@@ -152,7 +152,7 @@ class IronbentaskEnv(DirectRLEnv):
             ang_vel[:, 2:3],             # 1
             roll.unsqueeze(-1),          # 1
             pitch.unsqueeze(-1),         # 1
-            cum_x_norm,                  # ★ 累计位移（+1）
+            # cum_x_norm,                  # ★ 累计位移（+1）
         ], dim=-1)                      # 总共 22
 
         # TensorBoard 日志
@@ -188,8 +188,8 @@ class IronbentaskEnv(DirectRLEnv):
         # 4. roll / pitch 角度惩罚（身体倾斜） 降低惩罚1->0.5
         base_quat = self.robot.data.root_quat_w
         roll, pitch, _ = self._quat_to_euler(base_quat)
-        roll_penalty = torch.abs(roll) * 0.05
-        pitch_penalty = torch.abs(pitch) * 0.05
+        roll_penalty = torch.abs(roll) * 1.8
+        pitch_penalty = torch.abs(pitch) * 1.8
 
         # 5. 关节偏离零位 & 速度过大（小惩罚）
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.1
@@ -209,13 +209,14 @@ class IronbentaskEnv(DirectRLEnv):
         rew_forward = self._cum_x * 50.0 + self._move_steps.float() * 2.0
 
         # 静止惩罚（如果连续 0.5 秒未移动）
-        still_time = self._move_steps * self.step_dt
-        still_penalty = torch.clamp(0.5 - still_time, min=0.0) * 0.5  #微调成存活奖励，训练主动悬挂功能
+        # still_time = self._move_steps * self.step_dt
+        # still_penalty = torch.clamp(0.5 - still_time, min=0.0) * 0.5  #微调成存活奖励，训练主动悬挂功能
 
         # 总奖励
         total_reward = (
             # rew_forward
-            + still_penalty
+            # + still_penalty
+            + 0.5
             - roll_penalty
             - pitch_penalty
             + rew_pos
@@ -227,7 +228,7 @@ class IronbentaskEnv(DirectRLEnv):
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
             self.writer.add_scalar("reward/cum_x", self._cum_x.mean().item(), self.log_step)
-            self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
+            # self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
