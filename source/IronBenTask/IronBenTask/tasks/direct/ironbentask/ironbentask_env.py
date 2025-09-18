@@ -45,7 +45,11 @@ class IronbentaskEnv(DirectRLEnv):
         self.joint_pos = self.robot.data.joint_pos
         self.joint_vel = self.robot.data.joint_vel
 
-        # 记录上一帧 base 位置（用于计算实际位移）
+        #添加累计位移和连续移动计数器
+        self._cum_x = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        self._move_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+
+        # 在 __init__ 中添加
         self._last_x = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
 
     @staticmethod
@@ -123,14 +127,18 @@ class IronbentaskEnv(DirectRLEnv):
         lin_vel = self.robot.data.root_lin_vel_w  # (num_envs, 3)
         ang_vel = self.robot.data.root_ang_vel_w  # (num_envs, 3)
 
+        # 累计位移（归一化到 [-1, 1] 区间，可选）
+        cum_x_norm = torch.clamp(self._cum_x / 10.0, -1.0, 1.0).unsqueeze(-1)   # (N,1)
+
         observations = torch.cat([
             ctrl_pos,                    # 8
             ctrl_vel,                    # 8
-            lin_vel[:, :2],              # x, y 速度（2）
-            ang_vel[:, 2:3],             # yaw rate（1）
-            roll.unsqueeze(-1),
-            pitch.unsqueeze(-1),
-        ], dim=-1)  # 总共 8+8+2+1+2 = 21
+            lin_vel[:, :2],              # 2
+            ang_vel[:, 2:3],             # 1
+            roll.unsqueeze(-1),          # 1
+            pitch.unsqueeze(-1),         # 1
+            cum_x_norm,                  # ★ 累计位移（+1）
+        ], dim=-1)                      # 总共 22
 
         # TensorBoard 日志
         if self.log_step % 16 == 0:
@@ -172,35 +180,39 @@ class IronbentaskEnv(DirectRLEnv):
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
         rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
 
-        # 1. 实际向前位移奖励（Δx）
+
         current_x = self.robot.data.root_pos_w[:, 0]
         dx = current_x - self._last_x
         self._last_x = current_x
-        rew_forward = dx * 100.0   # 每米 100 分，可调
 
-        # 6. 存活奖励
-        # rew_alive = self.cfg.rew_scale_alive * 1.0
+        # 如果移动了，累计位移和连续步数增加
+        moved = dx > 0.01  # 阈值可调
+        self._cum_x += dx
+        self._move_steps = torch.where(moved, self._move_steps + 1, torch.zeros_like(self._move_steps))
+
+        # 奖励 = 累计位移 + 连续移动奖励
+        rew_forward = self._cum_x * 50.0 + self._move_steps.float() * 2.0
+
+        # 静止惩罚（如果连续 0.5 秒未移动）
+        still_time = self._move_steps * self.step_dt
+        still_penalty = torch.clamp(0.5 - still_time, min=0.0) * -5.0
 
         # 总奖励
         total_reward = (
-            # rew_alive
             rew_forward
-            # - lat_penalty
-            # - yaw_penalty
+            + still_penalty
             - roll_penalty
             - pitch_penalty
             + rew_pos
             + rew_vel
-            + still_penalty
         )
 
         # TensorBoard 日志（每 16 帧一次）
         if self.log_step % 64 == 0:
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
-            self.writer.add_scalar("reward/dx", dx.mean().item(), self.log_step)
+            self.writer.add_scalar("reward/cum_x", self._cum_x.mean().item(), self.log_step)
             self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
-            # self.writer.add_scalar("penalty/lateral",     lat_penalty.mean().item(),        self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
@@ -233,4 +245,5 @@ class IronbentaskEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
-        self._last_x[env_ids] = self.robot.data.root_pos_w[env_ids, 0]
+        self._cum_x[env_ids] = 0.0
+        self._move_steps[env_ids] = 0
