@@ -177,8 +177,8 @@ class IronbentaskEnv(DirectRLEnv):
         pitch_penalty = torch.abs(pitch) * 0.05
 
         # 5. 关节偏离零位 & 速度过大（小惩罚）
-        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
-        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
+        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.1
+        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.1
 
 
         current_x = self.robot.data.root_pos_w[:, 0]
