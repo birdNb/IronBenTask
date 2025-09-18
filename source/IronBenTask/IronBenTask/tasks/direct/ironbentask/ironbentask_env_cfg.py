@@ -42,7 +42,7 @@ IronbenFourLegCfg = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.2),          # 根据地高度微调
+        pos=(0.0, 0.0, 0.5),          # 根据地高度微调
         # rot=(0.9238795, 0.0, 0.0, 0.3826834),#以四元数方式表示，绕z轴45度
         joint_pos={
             # 腿关节初始全部置 0（可再调）
@@ -69,12 +69,13 @@ IronbenFourLegCfg = ArticulationCfg(
             damping=5.0,
             friction=0.0,
         ),
-        # 3. 轮关节（W_JOINT）→ 被动，不转
+        #把“轮”从 被动 → 主动
         "wheel": ImplicitActuatorCfg(
             joint_names_expr=[".*_W_JOINT"],
-            effort_limit_sim=0.0,      # 不施加驱动力
-            stiffness=1e6,               # 足够大 → 相当于刚性
-            damping=1e4,                 # 也足够大
+            effort_limit_sim=20.0,      # 给点力矩，让它能转起来
+            velocity_limit=10.0,        # 允许转速 > 5 rad/s
+            stiffness=0.0,              # 位置环关掉
+            damping=2.0,                # 一点速度阻尼，防止抖动
         ),
     },
 )

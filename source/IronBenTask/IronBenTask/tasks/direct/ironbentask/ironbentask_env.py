@@ -108,6 +108,21 @@ class IronbentaskEnv(DirectRLEnv):
             target_pos, joint_ids=self._all_ctrl_dof_idx
         )
 
+        # 给轮子下发速度指令
+        # 1. 拿到 4 个轮关节的索引
+        w_idx, _ = self.robot.find_joints([".*_W_JOINT"])
+        wheel_idx = torch.tensor(w_idx, dtype=torch.long, device=self.device)
+
+        # 2. 构造速度目标：+5 rad/s（向前转）
+        wheel_vel_target = torch.full(
+            (self.num_envs, len(wheel_idx)),
+            5.0,
+            device=self.device,
+        )
+
+        # 3. 下发速度目标（Isaac Lab 的 ImplicitActuator 支持速度模式）
+        self.robot.set_joint_velocity_target(wheel_vel_target, joint_ids=wheel_idx)
+
     def _get_observations(self) -> dict:
         # 获取 base_link 的姿态（四元数）
         base_quat = self.robot.data.root_quat_w  # shape: (num_envs, 4)
@@ -195,11 +210,11 @@ class IronbentaskEnv(DirectRLEnv):
 
         # 静止惩罚（如果连续 0.5 秒未移动）
         still_time = self._move_steps * self.step_dt
-        still_penalty = torch.clamp(0.5 - still_time, min=0.0) * -5.0
+        still_penalty = torch.clamp(0.5 - still_time, min=0.0) * 0.5  #微调成存活奖励，训练主动悬挂功能
 
         # 总奖励
         total_reward = (
-            rew_forward
+            # rew_forward
             + still_penalty
             - roll_penalty
             - pitch_penalty
