@@ -43,6 +43,7 @@ IronbenFourLegCfg = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.2),          # 根据地高度微调
+        # rot=(0.9238795, 0.0, 0.0, 0.3826834),#以四元数方式表示，绕z轴45度
         joint_pos={
             # 腿关节初始全部置 0（可再调）
             "LF_L_JOINT": 0.0, "LF_K_JOINT": 0.0, "LF_W_JOINT": 0.0,
@@ -52,26 +53,29 @@ IronbenFourLegCfg = ArticulationCfg(
         },
     ),
     actuators={
-        # 1. 大腿摆动（L_Link）→ 可控
         "hip": ImplicitActuatorCfg(
-            joint_names_expr=[".*_L_JOINT"],      # 四条大腿
-            effort_limit_sim=80.0,
-            stiffness=50.0,
-            damping=2.0,
+            joint_names_expr=[".*_L_JOINT"],
+            effort_limit=3.0,          # PD 最大纠偏力矩
+            velocity_limit=1.0,       # 速度限幅（足够大即可）
+            stiffness=80.0,             # P 增益
+            damping=5.0,                # D 增益
+            friction=0.0,
         ),
-        # 2. 小腿摆动（K_Link）→ 可控
         "knee": ImplicitActuatorCfg(
             joint_names_expr=[".*_K_JOINT"],
-            effort_limit_sim=80.0,
-            stiffness=50.0,
-            damping=2.0,
+            effort_limit=3.0,
+            velocity_limit=1.0,
+            stiffness=80.0,
+            damping=5.0,
+            friction=0.0,
         ),
-        # 3. 轮关节（W_JOINT）→ 被动，不转
+        #把“轮”从 被动 → 主动
         "wheel": ImplicitActuatorCfg(
             joint_names_expr=[".*_W_JOINT"],
-            effort_limit_sim=0.0,   # 不施加力
-            stiffness=0.0,          # 自由摆动
-            damping=0.0,
+            effort_limit_sim=20.0,      # 给点力矩，让它能转起来
+            velocity_limit=10.0,        # 允许转速 > 5 rad/s
+            stiffness=0.0,              # 位置环关掉
+            damping=2.0,                # 一点速度阻尼，防止抖动
         ),
     },
 )
@@ -80,12 +84,12 @@ IronbenFourLegCfg = ArticulationCfg(
 class IronbentaskEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 2
-    episode_length_s = 20.0
+    episode_length_s = 10.0
     # - spaces definition
     #8关节 16个观测量
-    # action_space = 8
+    action_space = 8
     #先测试一下能不能跑
-    action_space = 1
+    # action_space = 1
 
     # 加入粗糙地形
     rough_ground_cfg = sim_utils.UsdFileCfg(
@@ -108,7 +112,7 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     # observation_space = 16
     # observation_space = 2 #原来的只有单关节的角度和速度
     #加了 roll 和 pitch
-    observation_space = 6  # 4 original + roll + pitch
+    observation_space = 22  # 4 original + roll + pitch
     state_space = 0
 
     # simulation
@@ -123,17 +127,15 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     # custom parameters/scales
     # - controllable joint
     #先只动一条腿
-    cart_dof_name = "LF_L_JOINT"
-    pole_dof_name = "LF_K_JOINT"
+    # cart_dof_name = "LF_L_JOINT"
+    # pole_dof_name = "LF_K_JOINT"
     
     # - action scale
-    action_scale = 10.0  # [N]
+    action_scale = 1.0  # [N]
     # - reward scales
     rew_scale_alive = 1.0
     rew_scale_terminated = -2.0
-    rew_scale_pole_pos = -1.0
-    rew_scale_cart_vel = -0.01
-    rew_scale_pole_vel = -0.005
+
     # - reset states/conditions
     initial_pole_angle_range = [-0.25, 0.25]  # pole angle sample range on reset [rad]
     max_cart_pos = 3.0  # reset if cart exceeds this position [m]
