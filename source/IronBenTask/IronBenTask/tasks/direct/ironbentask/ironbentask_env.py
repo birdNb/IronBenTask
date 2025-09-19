@@ -152,7 +152,7 @@ class IronbentaskEnv(DirectRLEnv):
             ang_vel[:, 2:3],             # 1
             roll.unsqueeze(-1),          # 1
             pitch.unsqueeze(-1),         # 1
-            # cum_x_norm,                  # ★ 累计位移（+1）
+            cum_x_norm,                  # ★ 累计位移（+1）
         ], dim=-1)                      # 总共 22
 
         # TensorBoard 日志
@@ -188,12 +188,12 @@ class IronbentaskEnv(DirectRLEnv):
         # 4. roll / pitch 角度惩罚（身体倾斜） 降低惩罚1->0.5
         base_quat = self.robot.data.root_quat_w
         roll, pitch, _ = self._quat_to_euler(base_quat)
-        roll_penalty = torch.abs(roll) * 1.8
-        pitch_penalty = torch.abs(pitch) * 1.8
+        roll_penalty = torch.abs(roll) * 0.1
+        pitch_penalty = torch.abs(pitch) * 0.1
 
         # 5. 关节偏离零位 & 速度过大（小惩罚）
         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.1
-        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.1
+        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.05
 
 
         current_x = self.robot.data.root_pos_w[:, 0]
@@ -201,22 +201,21 @@ class IronbentaskEnv(DirectRLEnv):
         self._last_x = current_x
 
         # 如果移动了，累计位移和连续步数增加
-        moved = dx > 0.01  # 阈值可调
+        moved = dx > 0.03  # 阈值可调
         self._cum_x += dx
         self._move_steps = torch.where(moved, self._move_steps + 1, torch.zeros_like(self._move_steps))
 
         # 奖励 = 累计位移 + 连续移动奖励
-        rew_forward = self._cum_x * 50.0 + self._move_steps.float() * 2.0
+        rew_forward = self._cum_x * 80.0 + self._move_steps.float() * 2.0
 
         # 静止惩罚（如果连续 0.5 秒未移动）
-        # still_time = self._move_steps * self.step_dt
-        # still_penalty = torch.clamp(0.5 - still_time, min=0.0) * 0.5  #微调成存活奖励，训练主动悬挂功能
+        still_penalty = (self._cum_x - 1.0) ** 2 * 2.0  # 可调系数 
 
         # 总奖励
         total_reward = (
-            # rew_forward
-            # + still_penalty
-            + 0.5
+            rew_forward
+            + still_penalty
+            # + 0.5
             - roll_penalty
             - pitch_penalty
             + rew_pos
@@ -228,7 +227,7 @@ class IronbentaskEnv(DirectRLEnv):
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
             self.writer.add_scalar("reward/cum_x", self._cum_x.mean().item(), self.log_step)
-            # self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
+            self.writer.add_scalar("penalty/still",       still_penalty.mean().item(),      self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
