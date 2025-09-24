@@ -109,8 +109,8 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     )
 
 
-    # 观测: 8 个关节角度 + base_link 的 roll + pitch = 10
-    observation_space = 10
+    # 观测: 8 个关节角度 + roll + pitch + 前向速度 = 11
+    observation_space = 11
     state_space = 0
 
     # simulation
