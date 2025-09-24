@@ -52,6 +52,13 @@ class IronbentaskEnv(DirectRLEnv):
         # 在 __init__ 中添加
         self._last_x = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
 
+        # 5 秒窗口检查：若累计前进距离 < 0.5 m，则 reset 并惩罚
+        step_dt = float(self.cfg.sim.dt) * float(self.cfg.decimation)
+        self._window_target_steps = max(1, int(5.0 / step_dt))
+        self._window_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._window_disp = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        self._window_fail_penalty = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+
     @staticmethod
     #在类中添加如下静态方法
     def _quat_to_euler(quat):
@@ -170,6 +177,18 @@ class IronbentaskEnv(DirectRLEnv):
         self._cum_x += forward_dx
         cum_disp_reward = self._cum_x * 50.0  # 较大权重
 
+        # 窗口统计
+        self._window_steps += 1
+        self._window_disp += forward_dx
+        # 窗口结束时检查是否达标
+        window_end = self._window_steps >= self._window_target_steps
+        window_fail = window_end & (self._window_disp < 0.5)
+        # 仅在窗口结束该步给惩罚
+        self._window_fail_penalty = torch.where(window_fail, torch.full_like(self._window_fail_penalty, -2.0), torch.zeros_like(self._window_fail_penalty))
+        # 窗口重置（无论达标与否）
+        self._window_steps = torch.where(window_end, torch.zeros_like(self._window_steps), self._window_steps)
+        self._window_disp = torch.where(window_end, torch.zeros_like(self._window_disp), self._window_disp)
+
         # 基于前向速度的奖励与低速惩罚
         forward_vel = self.robot.data.root_lin_vel_w[:, 0]
         speed_reward = torch.clamp(forward_vel, min=0.0) * 2.0          # 速度越大，奖励越高
@@ -194,6 +213,7 @@ class IronbentaskEnv(DirectRLEnv):
             - pitch_penalty
             + rew_pos
             + rew_vel
+            + self._window_fail_penalty
         )
 
         # TensorBoard 日志（每 16 帧一次）
@@ -202,6 +222,7 @@ class IronbentaskEnv(DirectRLEnv):
             self.writer.add_scalar("reward/cum_disp",     cum_disp_reward.mean().item(),    self.log_step)
             self.writer.add_scalar("reward/speed",        speed_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/low_speed",   low_speed_penalty.mean().item(),  self.log_step)
+            self.writer.add_scalar("penalty/window_fail", self._window_fail_penalty.mean().item(), self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
             self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
         return total_reward
@@ -212,7 +233,12 @@ class IronbentaskEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         # 举例：任意关节角度超过 ±1.57 rad 就重置
         out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._all_ctrl_dof_idx]) > 1.57, dim=1)
-        return out_of_bounds, time_out
+
+        # 5 秒窗口失败时也触发重置
+        window_fail_done = (self._window_fail_penalty < 0.0)
+
+        dones = out_of_bounds | window_fail_done
+        return dones, time_out
         # return time_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
@@ -236,3 +262,8 @@ class IronbentaskEnv(DirectRLEnv):
 
         self._cum_x[env_ids] = 0.0
         self._move_steps[env_ids] = 0
+        self._last_x[env_ids] = self.robot.data.root_pos_w[env_ids, 0]
+        # 重置窗口统计
+        self._window_steps[env_ids] = 0
+        self._window_disp[env_ids] = 0.0
+        self._window_fail_penalty[env_ids] = 0.0
