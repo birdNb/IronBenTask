@@ -134,32 +134,20 @@ class IronbentaskEnv(DirectRLEnv):
         roll_deg = roll * 180.0 / torch.pi
         pitch_deg = pitch * 180.0 / torch.pi
 
-        # 8 个可控关节
+        # 8 个可控关节（仅角度作为观测量）
         ctrl_pos = self.joint_pos[:, self._all_ctrl_dof_idx]
-        ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
-
-        # 获取 base 线速度与角速度
-        lin_vel = self.robot.data.root_lin_vel_w  # (num_envs, 3)
-        ang_vel = self.robot.data.root_ang_vel_w  # (num_envs, 3)
-
-        # 累计位移（归一化到 [-1, 1] 区间，可选）
-        cum_x_norm = torch.clamp(self._cum_x / 10.0, -1.0, 1.0).unsqueeze(-1)   # (N,1)
 
         observations = torch.cat([
             ctrl_pos,                    # 8
-            ctrl_vel,                    # 8
-            lin_vel[:, :2],              # 2
-            ang_vel[:, 2:3],             # 1
             roll.unsqueeze(-1),          # 1
             pitch.unsqueeze(-1),         # 1
-            cum_x_norm,                  # ★ 累计位移（+1）
-        ], dim=-1)                      # 总共 22
+        ], dim=-1)                      # 总共 10
 
         # TensorBoard 日志
         if self.log_step % 16 == 0:
             self.writer.add_scalar("imu/roll_deg", roll_deg.mean().item(), self.log_step)
             self.writer.add_scalar("imu/pitch_deg", pitch_deg.mean().item(), self.log_step)
-            self.writer.add_scalar("imu/lin_vel_x", lin_vel[:, 0].mean().item(), self.log_step)
+            # 可按需增加更多日志
             
         self.log_step += 1
 

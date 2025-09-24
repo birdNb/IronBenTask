@@ -20,9 +20,9 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         critic_obs_normalization=False,
         # actor_hidden_dims=[32, 32],
         # critic_hidden_dims=[32, 32],
-        #提升网络规模
-        actor_hidden_dims=[256, 128, 64],
-        critic_hidden_dims=[256, 128, 64],
+        # 极简网络规模，以减少参数量和推理成本
+        actor_hidden_dims=[16, 8],
+        critic_hidden_dims=[16, 8],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
