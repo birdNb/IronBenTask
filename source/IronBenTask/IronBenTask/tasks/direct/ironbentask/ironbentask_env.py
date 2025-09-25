@@ -356,6 +356,8 @@ class IronbentaskEnv(DirectRLEnv):
             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
             self.writer.add_scalar("reward/cum_disp",     cum_disp_reward.mean().item(),    self.log_step)
             self.writer.add_scalar("reward/speed",        speed_reward.mean().item(),       self.log_step)
+            # 累计向前移动距离（米）
+            self.writer.add_scalar("progress/cum_x",      self._cum_x.mean().item(),        self.log_step)
             self.writer.add_scalar("penalty/low_speed",   low_speed_penalty.mean().item(),  self.log_step)
             self.writer.add_scalar("penalty/window_fail", self._window_fail_penalty.mean().item(), self.log_step)
             self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
