@@ -69,3 +69,7 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# 放行当前整个仓库（放在文件最末尾，覆盖前面所有忽略）
+!*/
+!**/*

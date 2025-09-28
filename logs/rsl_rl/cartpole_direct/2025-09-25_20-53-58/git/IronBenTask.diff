@@ -1,0 +1,9 @@
+--- git status ---
+On branch onnx-c,cut_obs
+Your branch is ahead of 'origin/onnx-c,cut_obs' by 1 commit.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean 
+
+
+--- git diff ---
