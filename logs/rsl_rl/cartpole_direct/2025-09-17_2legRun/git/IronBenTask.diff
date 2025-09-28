@@ -1,0 +1,87 @@
+--- git status ---
+On branch imu_back
+Your branch is ahead of 'origin/imu_back' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py b/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+index 024c45b..cd02663 100644
+--- a/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
++++ b/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+@@ -147,42 +147,51 @@ class IronbentaskEnv(DirectRLEnv):
+         ctrl_vel = self.joint_vel[:, self._all_ctrl_dof_idx]
+ 
+         # 1. 前进速度奖励（x 轴）
+-        forward_vel = self.robot.data.root_lin_vel_w[:, 0]          # (num_envs,)
+-        rew_forward = forward_vel * 2.0                             # 可调系数
++        forward_vel = self.robot.data.root_lin_vel_w[:, 0]
++        rew_forward = forward_vel * 2.0
+ 
+-        # 2. 低前进速度惩罚（< 0.2 m/s 时线性惩罚）
+-        low_speed_penalty = torch.clamp(0.2 - forward_vel, min=0.0) * 1.5
++        # 2. 侧向速度惩罚（y 轴）
++        lateral_vel = self.robot.data.root_lin_vel_w[:, 1]
++        lat_penalty = torch.abs(lateral_vel) * 0.5
+ 
+-        # 3. 腿部低速度惩罚（鼓励腿部摆动）
+-        leg_speed_l2 = torch.norm(ctrl_vel, dim=1)                  # 8 关节速度 L2
+-        low_leg_speed_penalty = torch.clamp(0.5 - leg_speed_l2, min=0.0) * 0.8
++        # 3. 偏航角速度惩罚（z 轴角速度）
++        yaw_rate = self.robot.data.root_ang_vel_w[:, 2]
++        yaw_penalty = torch.abs(yaw_rate) * 0.3
+ 
+-        # 4. 小惩罚：关节偏离零位 & 速度过大
++        # 4. roll / pitch 角度惩罚（身体倾斜）
++        base_quat = self.robot.data.root_quat_w
++        roll, pitch, _ = self._quat_to_euler(base_quat)
++        roll_penalty = torch.abs(roll) * 1.0
++        pitch_penalty = torch.abs(pitch) * 1.0
++
++        # 5. 关节偏离零位 & 速度过大（小惩罚）
+         rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
+         rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
+ 
+-        # 5. 存活奖励
++        # 6. 存活奖励
+         rew_alive = self.cfg.rew_scale_alive * 1.0
+ 
+         # 总奖励
+         total_reward = (
+             rew_alive
+             + rew_forward
+-            - low_speed_penalty          # 注意是减
+-            - low_leg_speed_penalty      # 注意是减
++            - lat_penalty
++            - yaw_penalty
++            - roll_penalty
++            - pitch_penalty
+             + rew_pos
+             + rew_vel
+         )
+ 
+-        # TensorBoard 日志
++        # TensorBoard 日志（每 16 帧一次）
+         if self.log_step % 16 == 0:
+-            self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
+-            self.writer.add_scalar("reward/low_speed",    low_speed_penalty.mean().item(),  self.log_step)
+-            self.writer.add_scalar("reward/low_leg",      low_leg_speed_penalty.mean().item(), self.log_step)
+             self.writer.add_scalar("reward/total",        total_reward.mean().item(),       self.log_step)
+-
++            self.writer.add_scalar("reward/forward",      rew_forward.mean().item(),        self.log_step)
++            self.writer.add_scalar("penalty/lateral",     lat_penalty.mean().item(),        self.log_step)
++            self.writer.add_scalar("penalty/yaw_rate",    yaw_penalty.mean().item(),        self.log_step)
++            self.writer.add_scalar("penalty/roll",        roll_penalty.mean().item(),       self.log_step)
++            self.writer.add_scalar("penalty/pitch",       pitch_penalty.mean().item(),      self.log_step)
+         return total_reward
+-
+     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+         self.joint_pos = self.robot.data.joint_pos
+         self.joint_vel = self.robot.data.joint_vel

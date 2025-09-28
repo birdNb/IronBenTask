@@ -1,0 +1,46 @@
+--- git status ---
+On branch imu_back
+Your branch is ahead of 'origin/imu_back' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py b/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+index bd05a7f..c3b4df9 100644
+--- a/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
++++ b/source/IronBenTask/IronBenTask/tasks/direct/ironbentask/ironbentask_env.py
+@@ -173,12 +173,12 @@ class IronbentaskEnv(DirectRLEnv):
+         # 4. roll / pitch 角度惩罚（身体倾斜） 降低惩罚1->0.5
+         base_quat = self.robot.data.root_quat_w
+         roll, pitch, _ = self._quat_to_euler(base_quat)
+-        roll_penalty = torch.abs(roll) * 0.05
+-        pitch_penalty = torch.abs(pitch) * 0.05
++        roll_penalty = torch.abs(roll) * 0.1
++        pitch_penalty = torch.abs(pitch) * 0.1
+ 
+         # 5. 关节偏离零位 & 速度过大（小惩罚）
+-        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.01
+-        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.005
++        rew_pos = -torch.sum(ctrl_pos ** 2, dim=-1) * 0.1
++        rew_vel = -torch.sum(ctrl_vel ** 2, dim=-1) * 0.1
+ 
+ 
+         current_x = self.robot.data.root_pos_w[:, 0]
+@@ -203,8 +203,8 @@ class IronbentaskEnv(DirectRLEnv):
+             + still_penalty
+             - roll_penalty
+             - pitch_penalty
+-            + rew_pos
+-            + rew_vel
++            # + rew_pos
++            # + rew_vel
+         )
+ 
+         # TensorBoard 日志（每 16 帧一次）
