@@ -109,10 +109,8 @@ class IronbentaskEnvCfg(DirectRLEnvCfg):
     )
 
 
-    # observation_space = 16
-    # observation_space = 2 #原来的只有单关节的角度和速度
-    #加了 roll 和 pitch
-    observation_space = 22  # 4 original + roll + pitch
+    # 观测: 8 个关节角度 + roll + pitch + 前向速度 = 11
+    observation_space = 11
     state_space = 0
 
     # simulation
