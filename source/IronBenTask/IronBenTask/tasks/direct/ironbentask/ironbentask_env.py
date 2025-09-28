@@ -147,6 +147,7 @@ class IronbentaskEnv(DirectRLEnv):
         lin_vel = self.robot.data.root_lin_vel_w  # (num_envs, 3)
         v_forward = lin_vel[:, 0].unsqueeze(-1)
 
+
         observations = torch.cat([
             ctrl_pos,                    # 8
             roll.unsqueeze(-1),          # 1
