@@ -10,6 +10,7 @@
 
 # No USD files allowed in the repo
 **/*.usd
+!IRONBEN_0914.usd
 **/*.usda
 **/*.usdc
 **/*.usdz
